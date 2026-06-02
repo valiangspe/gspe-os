@@ -1,0 +1,247 @@
+import type {
+  AgentRecord,
+  GovernanceMatrixRow,
+  InterfaceContract,
+  ToolRecord,
+} from "./types"
+
+// Registry (Domain 2) + Interface Contract Register (Domain 6). Mock data.
+// Statuses are deliberately mixed to keep the console status-honest (REQ-SC-16):
+// nothing is "Active" without real execution evidence.
+
+export const MATRIX_VERSION = "gm-2026.05"
+export const POLICY_RULESET_VERSION = "pr-2026.05.2"
+
+export const TOOLS: ToolRecord[] = [
+  {
+    id: "tool-wo-release",
+    name: "Work Order Release",
+    owner: "PPC Module",
+    sideEffectClass: "C2",
+    inputSchema: "{ woId, plant }",
+    outputSchema: "{ released: bool }",
+    idempotent: true,
+    reversibility: "Reversible within 24h via WO recall",
+    permissionScope: "ppc:write",
+    dataClassification: "Internal",
+    rateLimit: "60/min",
+    costClass: "low",
+    failureBehavior: "fail-closed",
+    status: "Active",
+    version: "1.4.0",
+  },
+  {
+    id: "tool-bom-read",
+    name: "BOM Reader",
+    owner: "Engineering Module",
+    sideEffectClass: "C0",
+    inputSchema: "{ bomId }",
+    outputSchema: "{ lines[] }",
+    idempotent: true,
+    reversibility: "n/a (read-only)",
+    permissionScope: "eng:read",
+    dataClassification: "Internal",
+    rateLimit: "600/min",
+    costClass: "low",
+    failureBehavior: "fail-closed",
+    status: "Active",
+    version: "2.1.0",
+  },
+  {
+    id: "tool-invoice-approve",
+    name: "Invoice Approval",
+    owner: "Finance Module",
+    sideEffectClass: "C4",
+    inputSchema: "{ invoiceId, amount }",
+    outputSchema: "{ approved: bool }",
+    idempotent: false,
+    reversibility: "Hard to undo — issues payment",
+    permissionScope: "fin:approve",
+    dataClassification: "Confidential",
+    rateLimit: "10/min",
+    costClass: "medium",
+    failureBehavior: "fail-closed",
+    status: "Tested",
+    version: "0.9.0",
+  },
+  {
+    id: "tool-customer-email",
+    name: "Customer Email Sender",
+    owner: "CRM Module",
+    sideEffectClass: "C3",
+    inputSchema: "{ to, subject, body }",
+    outputSchema: "{ sent: bool }",
+    idempotent: false,
+    reversibility: "Irreversible once sent",
+    permissionScope: "crm:send",
+    dataClassification: "Confidential",
+    rateLimit: "30/min",
+    costClass: "low",
+    failureBehavior: "fail-closed",
+    status: "Tested",
+    version: "1.0.0",
+  },
+  {
+    id: "tool-safety-permit",
+    name: "Safety Work Permit",
+    owner: "HSE Module",
+    sideEffectClass: "C5",
+    inputSchema: "{ permitId, area }",
+    outputSchema: "{ issued: bool }",
+    idempotent: false,
+    reversibility: "Safety-critical — manual rollback only",
+    permissionScope: "hse:issue",
+    dataClassification: "Restricted",
+    rateLimit: "5/min",
+    costClass: "low",
+    failureBehavior: "fail-closed",
+    status: "Designed",
+    version: "0.3.0",
+  },
+]
+
+export const AGENTS: AgentRecord[] = [
+  {
+    id: "agent-ppc-planner",
+    name: "PPC Planner Agent",
+    purpose: "Drafts and proposes work-order releases from demand signals.",
+    owner: "Fitri Handayani",
+    autonomy: "A2",
+    allowedTools: ["tool-wo-release", "tool-bom-read"],
+    status: "Active",
+    version: "1.2.0",
+  },
+  {
+    id: "agent-proc-assist",
+    name: "Procurement Assistant",
+    purpose: "Recommends purchase orders and flags price anomalies.",
+    owner: "Fitri Handayani",
+    autonomy: "A2",
+    allowedTools: ["tool-bom-read"],
+    status: "Tested",
+    version: "0.8.0",
+  },
+  {
+    id: "agent-crm-responder",
+    name: "CRM Responder",
+    purpose: "Drafts customer replies for human review before send.",
+    owner: "Agus Wijaya",
+    autonomy: "A1",
+    allowedTools: ["tool-customer-email"],
+    status: "Tested",
+    version: "0.5.0",
+  },
+  {
+    id: "agent-fin-reconciler",
+    name: "Finance Reconciler",
+    purpose: "Prepares invoice approvals for finance review.",
+    owner: "Anita Rahmawati",
+    autonomy: "A2",
+    allowedTools: ["tool-invoice-approve", "tool-bom-read"],
+    status: "Designed",
+    version: "0.2.0",
+  },
+  {
+    id: "agent-rogue-optimizer",
+    name: "Schedule Optimizer",
+    purpose: "Experimental scheduler — suspended after a runaway loop.",
+    owner: "Fitri Handayani",
+    autonomy: "A3",
+    allowedTools: ["tool-wo-release"],
+    status: "Suspended",
+    version: "0.7.1",
+    reducedScope: "Read-only (A0) — pending reinstatement",
+  },
+]
+
+export const GOVERNANCE_MATRIX: GovernanceMatrixRow[] = [
+  {
+    actionClass: "C0",
+    label: "Read",
+    maxAutonomyWithoutApproval: "A5",
+    defaultHumanGate: "none",
+    approverAuthority: null,
+  },
+  {
+    actionClass: "C1",
+    label: "Reversible write",
+    maxAutonomyWithoutApproval: "A4",
+    defaultHumanGate: "audit",
+    approverAuthority: null,
+  },
+  {
+    actionClass: "C2",
+    label: "Hard-to-undo write",
+    maxAutonomyWithoutApproval: "A3",
+    defaultHumanGate: "approval",
+    approverAuthority: "ISO",
+  },
+  {
+    actionClass: "C3",
+    label: "External communication",
+    maxAutonomyWithoutApproval: "A3",
+    defaultHumanGate: "approval before send",
+    approverAuthority: "CUSTOMER",
+  },
+  {
+    actionClass: "C4",
+    label: "Financial",
+    maxAutonomyWithoutApproval: "A2",
+    defaultHumanGate: "finance-authorized approval; never ALLOW ≥ A3",
+    approverAuthority: "FINANCE",
+  },
+  {
+    actionClass: "C5",
+    label: "Safety",
+    maxAutonomyWithoutApproval: "A2",
+    defaultHumanGate: "safety-authorized approval; never autonomous",
+    approverAuthority: "SAFETY",
+  },
+]
+
+export const INTERFACES: InterfaceContract[] = [
+  {
+    id: "if-ppc-prod",
+    source: "PPC",
+    target: "Production",
+    deliverable: "Released work orders",
+    format: "Event + REST",
+    owner: "OS Program Manager",
+    slaCadence: "Real-time, <5 min",
+    health: "green",
+    lastHandoff: "2026-06-02T08:12:00Z",
+    changeNoticeDays: 14,
+  },
+  {
+    id: "if-eng-ppc",
+    source: "Engineering",
+    target: "PPC",
+    deliverable: "Released BOM",
+    format: "Batch nightly",
+    owner: "OS Program Manager",
+    slaCadence: "Daily by 06:00",
+    health: "yellow",
+    lastHandoff: "2026-06-02T06:41:00Z",
+    changeNoticeDays: 14,
+  },
+  {
+    id: "if-proc-fin",
+    source: "Procurement",
+    target: "Finance",
+    deliverable: "Approved PO totals",
+    format: "REST",
+    owner: "OS Program Manager",
+    slaCadence: "Hourly",
+    health: "red",
+    lastHandoff: "2026-06-01T22:03:00Z",
+    changeNoticeDays: 14,
+  },
+]
+
+export function agentById(id: string) {
+  return AGENTS.find((a) => a.id === id)
+}
+
+export function toolById(id: string) {
+  return TOOLS.find((t) => t.id === id)
+}
